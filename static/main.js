@@ -1,44 +1,86 @@
+const elChat = document.getElementById("chat");
+const elForm = document.getElementById("composer");
+const elMsg  = document.getElementById("message");
+const elSend = document.getElementById("send");
+const elBadge = document.getElementById("csv-status");
 
-const chat = document.getElementById('chat');
-const input = document.getElementById('message');
-const sendBtn = document.getElementById('send');
-const kbEl = document.getElementById('kb');
+let sending = false;
+
+// Utilities
+function esc(str) { return (str ?? "").toString()
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
 function addMessage(role, text) {
-  const wrap = document.createElement('div');
+  const wrap = document.createElement("div");
   wrap.className = `msg ${role}`;
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.textContent = text;
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.textContent = role === "bot" ? "🤖" : "🙂";
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.innerHTML = esc(text);
+  if (role === "bot") wrap.appendChild(avatar);
   wrap.appendChild(bubble);
-  chat.appendChild(wrap);
-  chat.scrollTop = chat.scrollHeight;
+  elChat.appendChild(wrap);
+  elChat.scrollTop = elChat.scrollHeight;
 }
 
-async function sendMessage() {
-  const text = input.value.trim();
-  if (!text) return;
-  addMessage('user', text);
-  input.value = '';
-  sendBtn.disabled = true;
+function setSending(on) {
+  sending = on;
+  elSend.disabled = on;
+  elSend.textContent = on ? "Sending…" : "Send";
+}
 
+async function fetchCsvStatus() {
   try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, kb: kbEl.value })
-    });
-    const data = await res.json();
-    if (data.reply) addMessage('bot', data.reply);
-    else addMessage('bot', data.error || 'Unknown error');
+    const r = await fetch("/debug/csv", { cache: "no-store" });
+    if (!r.ok) throw new Error("status " + r.status);
+    const j = await r.json();
+    const en = j.en_count ?? 0, es = j.es_count ?? 0;
+    elBadge.textContent = `Connected: EN ${en} · ES ${es}`;
+    elBadge.className = "badge ok";
   } catch (e) {
-    addMessage('bot', 'Network error: ' + e.message);
-  } finally {
-    sendBtn.disabled = false;
+    elBadge.textContent = "No CSV connected";
+    elBadge.className = "badge warn";
   }
 }
 
-sendBtn.addEventListener('click', sendMessage);
-input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendMessage();
+async function sendMessage(text) {
+  setSending(true);
+  addMessage("user", text);
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text })
+    });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    addMessage("bot", j.reply);
+  } catch (e) {
+    addMessage("bot", "⚠️ Error: " + e.message);
+  } finally {
+    setSending(false);
+  }
+}
+
+// Events
+elForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = elMsg.value.trim();
+  if (!text || sending) return;
+  elMsg.value = "";
+  sendMessage(text);
 });
+
+// Shift+Enter for newline, Enter to send
+elMsg.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    elForm.dispatchEvent(new Event("submit"));
+  }
+});
+
+// Boot
+addMessage("bot", "¡Hola! / Hi! Ask me anything about the school. \n(Respondo en Español o Inglés.)");
+fetchCsvStatus();
