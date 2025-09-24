@@ -172,9 +172,140 @@ def debug_csv():
         "sample_es": ctx["es"][:2]
     })
 
+@app.route("/widget.js")
+def widget_js():
+    js = r"""
+(() => {
+  // ---- Config via script tag data-attributes ----
+  const currentScript = document.currentScript;
+  const CHAT_SRC = currentScript?.dataset?.chatbotSrc || (location.origin);
+  const BTN_COLOR = currentScript?.dataset?.primaryColor || "#2563eb"; // blue-600
+  const CORNER = currentScript?.dataset?.position || "right"; // "right" | "left"
+  const TITLE = currentScript?.dataset?.title || "Ask the School";
+
+  // ---- Create style ----
+    const style = document.createElement("style");
+  style.textContent = `
+    .scb-btn {
+      position: fixed; ${CORNER}: 20px; bottom: 20px;
+      width: 56px; height: 56px; border-radius: 9999px;
+      background: ${BTN_COLOR}; color: white; border: none;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 10px 24px rgba(0,0,0,.2); cursor: pointer; z-index: 2147483646;
+      font: 600 16px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    .scb-panel {
+      position: fixed; inset: auto 0 0 auto; ${CORNER}: 20px; bottom: 90px;
+      width: min(420px, 95vw); height: min(70vh, 700px);
+      background: #fff; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,.25); z-index: 2147483647;
+      display: none; flex-direction: column;
+    }
+    .scb-header {
+      height: 44px; background: #111827; color: white; display: flex;
+      align-items: center; justify-content: space-between; padding: 0 12px;
+      font: 600 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    .scb-close { background: transparent; border: none; color: white; font-size: 18px; cursor: pointer; }
+    .scb-iframe { width: 100%; height: calc(100% - 44px); border: 0; }
+    .scb-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.2);
+      display: none; z-index: 2147483645;
+    }
+    @media (max-width: 640px) {
+      .scb-panel { bottom: 0; ${CORNER}: 0; width: 100vw; height: 85vh; border-radius: 12px 12px 0 0; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // ---- Create elements ----
+  const btn = document.createElement("button");
+  btn.className = "scb-btn";
+  btn.setAttribute("aria-label", "Open chat");
+  btn.innerHTML = "💬";
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "scb-backdrop";
+
+  const panel = document.createElement("div");
+  panel.className = "scb-panel";
+
+  const header = document.createElement("div");
+  header.className = "scb-header";
+  header.innerHTML = `<span>${TITLE}</span>`;
+
+  const close = document.createElement("button");
+  close.className = "scb-close";
+  close.innerHTML = "×";
+  close.addEventListener("click", () => {
+    panel.style.display = "none";
+    backdrop.style.display = "none";
+  });
+
+  header.appendChild(close);
+
+  const iframe = document.createElement("iframe");
+  iframe.className = "scb-iframe";
+  iframe.src = CHAT_SRC; // e.g., https://school-chatbot.onrender.com
+
+  panel.appendChild(header);
+  panel.appendChild(iframe);
+
+  // ---- Mount ----
+  document.body.appendChild(backdrop);
+  document.body.appendChild(panel);
+  document.body.appendChild(btn);
+
+  // ---- Events ----
+  btn.addEventListener("click", () => {
+    panel.style.display = "flex";
+    backdrop.style.display = "block";
+  });
+  backdrop.addEventListener("click", () => {
+    panel.style.display = "none";
+    backdrop.style.display = "none";
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      panel.style.display = "none";
+      backdrop.style.display = "none";
+    }
+  });
+})();
+    """.strip()
+    from flask import Response
+    return Response(js, mimetype="application/javascript")
+
+@app.after_request
+def add_embed_headers(resp):
+    # Allow framing the chatbot on other sites (adjust origins as you like)
+    resp.headers["X-Frame-Options"] = "ALLOWALL"
+    # Safer: specify allowed parents explicitly (add your school domain here)
+    # resp.headers["Content-Security-Policy"] = "frame-ancestors 'self' https://school-website.org http://localhost:8080;"
+    return resp
+
+@app.after_request
+def add_embed_headers(resp):
+    # Allow the chatbot to be embedded on other pages
+    resp.headers["X-Frame-Options"] = "ALLOWALL"
+    return resp
+
+@app.route("/")
+def home():
+    return "Chatbot Home"
+
+@app.route("/widget.js")
+def widget_js():
+    js = "console.log('widget loaded')"
+    return Response(js, mimetype="application/javascript")
+
+The key is:
+
+    app = Flask(__name__) fi
 # -----------------------
 # Run
 # -----------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="127.0.0.1", port=port, debug=True)
+
