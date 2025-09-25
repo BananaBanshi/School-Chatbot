@@ -117,6 +117,10 @@ def _format_context_for_model(pairs, lang_tag):
 def index():
     return send_from_directory(app.static_folder, "index.html")
 
+@app.route("/landing")
+def landing_page():
+    return app.send_static_file("landing.html")
+
 @app.post("/api/chat")
 def chat():
     data = request.get_json(force=True) or {}
