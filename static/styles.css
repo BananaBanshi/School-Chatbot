@@ -1,0 +1,35 @@
+:root{
+  --bg:#f6f7fb;--card:#fff;--ink:#111827;--muted:#6b7280;
+  --brand:#2563eb;--user:#eef2ff;--bot:#f9fafb;
+  --radius:14px;--shadow:0 10px 30px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;color:var(--ink);background:var(--bg);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.app-header,.app-footer{max-width:1100px;margin:0 auto;padding:16px 20px}
+.app-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{font-size:28px}
+h1{font-size:20px;margin:0 0 2px}
+.subtitle{margin:0;color:var(--muted);font-size:13px}
+.status .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-size:12px;background:#e5e7eb;color:#374151}
+.badge.ok{background:#d1fae5;color:#065f46}
+.badge.warn{background:#fef3c7;color:#854d0e}
+.badge.err{background:#fee2e2;color:#991b1b}
+.chat-shell{max-width:900px;margin:0 auto;padding:8px 20px 20px}
+.chat-window{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);min-height:55vh;max-height:70vh;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px}
+.msg{display:flex;gap:10px;align-items:flex-start}
+.msg .bubble{padding:10px 12px;border-radius:12px;max-width:80%;white-space:pre-wrap;word-wrap:break-word}
+.msg.user{justify-content:flex-end}
+.msg.user .bubble{background:var(--user)}
+.msg.bot .bubble{background:var(--bot)}
+.msg .avatar{width:28px;height:28px;display:grid;place-items:center;background:#e5e7eb;border-radius:50%;font-size:14px}
+.msg.user .avatar{display:none}
+.msg.bot .avatar{background:#dbeafe;color:#1e3a8a}
+.composer{margin-top:14px;display:grid;grid-template-columns:1fr auto;gap:10px}
+#message{resize:vertical;min-height:44px;max-height:160px;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;font:inherit;outline:none;background:#fff}
+#message:focus{border-color:#c7d2fe;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.send-btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:0 18px;font-weight:600;cursor:pointer}
+.send-btn:disabled{opacity:.6;cursor:not-allowed}
+.app-footer{color:var(--muted);text-align:center;font-size:13px}
+@media (max-width: 640px){.chat-window{min-height:60vh;max-height:70vh}}

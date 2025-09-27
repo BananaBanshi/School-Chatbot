@@ -1,0 +1,85 @@
+*** app.py.old
+--- app.py
+***************
+***     try:
+-        # bust simple caches on remote CSV
+-        bust = f"{url}{'&_ts=' if '?' in url else '?_ts='}{int(time.time())}"
+-        text = _fetch_csv_text(bust)
+-        rows = list(csv.reader(io.StringIO(text)))
+-        if not rows:
+-            raise ValueError("Empty CSV")
+-
+-        header = [h.strip().lower() for h in rows[0]]
+-        idx = {h: i for i, h in enumerate(header)}
+-
+-        def pick(*names):
+-            for n in names:
+-                if n in idx:
+-                    return idx[n]
+-            return None
+-
+-        qi_en = pick("question_en", "question en", "question", "q_en", "q")
+-        ai_en = pick("answer_en",   "answer en",   "answer",   "a_en", "a")
+-        qi_es = pick("question_es", "question es", "pregunta_es", "pregunta es", "pregunta")
+-        ai_es = pick("answer_es",   "answer es",   "respuesta_es","respuesta es","respuesta")
+-
+-        en_rows, es_rows = [], []
+-        for r in rows[1:]:
+-            if len(r) < len(header):
+-                r = r + [""] * (len(header) - len(r))
+-            q_en = r[qi_en] if qi_en is not None else ""
+-            a_en = r[ai_en] if ai_en is not None else ""
+-            q_es = r[qi_es] if qi_es is not None else ""
+-            a_es = r[ai_es] if ai_es is not None else ""
+-
+-            if q_en.strip() and a_en.strip():
+-                en_rows.append((q_en.strip(), a_en.strip()))
+-            if q_es.strip() and a_es.strip():
+-                es_rows.append((q_es.strip(), a_es.strip()))
+-
+-        _csv_cache["en"] = en_rows
+-        _csv_cache["es"] = es_rows
+-        _csv_cache["loaded_at"] = _now()
+-        print(f"[CSV] Loaded {len(en_rows)} EN rows, {len(es_rows)} ES rows.")
++        # bust simple caches on remote CSV
++        bust = f"{url}{'&_ts=' if '?' in url else '?_ts='}{int(time.time())}"
++        text = _fetch_csv_text(bust)
++        rows = list(csv.reader(io.StringIO(text)))
++        if not rows:
++            raise ValueError("Empty CSV")
++
++        header = [h.strip().lower() for h in rows[0]]
++        idx = {h: i for i, h in enumerate(header)}
++
++        def pick(*names):
++            for n in names:
++                if n in idx:
++                    return idx[n]
++            return None
++
++        qi_en = pick("question_en", "question en", "question", "q_en", "q")
++        ai_en = pick("answer_en",   "answer en",   "answer",   "a_en", "a")
++        qi_es = pick("question_es", "question es", "pregunta_es", "pregunta es", "pregunta")
++        ai_es = pick("answer_es",   "answer es",   "respuesta_es","respuesta es","respuesta")
++
++        en_rows, es_rows = [], []
++        for r in rows[1:]:
++            if len(r) < len(header):
++                r = r + [""] * (len(header) - len(r))
++            q_en = r[qi_en] if qi_en is not None else ""
++            a_en = r[ai_en] if ai_en is not None else ""
++            q_es = r[qi_es] if qi_es is not None else ""
++            a_es = r[ai_es] if ai_es is not None else ""
++
++            if q_en.strip() and a_en.strip():
++                en_rows.append((q_en.strip(), a_en.strip()))
++            if q_es.strip() and a_es.strip():
++                es_rows.append((q_es.strip(), a_es.strip()))
++
++        _csv_cache["en"] = en_rows
++        _csv_cache["es"] = es_rows
++        _csv_cache["loaded_at"] = _now()
++        print(f"[CSV] Loaded {len(en_rows)} EN rows, {len(es_rows)} ES rows.")
++
++    except Exception as e:
++        print("CSV load error:", e)
