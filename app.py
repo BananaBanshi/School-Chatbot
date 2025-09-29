@@ -177,17 +177,19 @@ def index():
 def health():
     return "ok", 200
 
+
+
 @app.get("/debug/csv")
 def debug_csv():
     ctx = _get_bilingual_context()
     return jsonify({
         "csv_url": CSV_URL,
-        "en_count": len(ctx["en"]),
-        "es_count": len(ctx["es"]),
-        "sample_en": ctx["en"][:3],
-        "sample_es": ctx["es"][:3],
-        "cached_at": _csv_cache["loaded_at"],
-        "cache_ttl": CACHE_TTL,
+        "en_count": len(ctx.get("en", [])),
+        "es_count": len(ctx.get("es", [])),
+        "ja_count": len(ctx.get("ja", [])),
+        "sample_en": ctx.get("en", [])[:2],
+        "sample_es": ctx.get("es", [])[:2],
+        "sample_ja": ctx.get("ja", [])[:2], 
     })
 
 
