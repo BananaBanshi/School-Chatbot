@@ -190,6 +190,77 @@ def debug_csv():
         "cache_ttl": CACHE_TTL,
     })
 
+
+
+# --- Simple admin (optional token) ---
+from datetime import datetime
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+
+def _admin_allowed() -> bool:
+    if not ADMIN_TOKEN:
+        return True
+    token = (request.args.get("token") or "").strip()
+    return token == ADMIN_TOKEN
+
+def _fmt_ts(ts: float) -> str:
+    if not ts: return "never"
+    try:
+        return datetime.utcfromtimestamp(ts).isoformat() + "Z"
+    except Exception:
+        return str(ts)
+
+@app.get("/admin")
+def admin():
+    if not _admin_allowed():
+        return ("forbidden", 403)
+    ctx = _get_bilingual_context()
+    en = len(ctx.get("en", []))
+    es = len(ctx.get("es", []))
+    ja = len(ctx.get("ja", []))
+    last = _fmt_ts(_csv_cache.get("loaded_at", 0.0))
+    hint = f"&token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
+    html = f"""
+<!doctype html>
+<meta charset="utf-8">
+<title>Admin</title>
+<style>
+body{{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:820px;margin:40px auto;padding:0 16px}}
+pre,code{{background:#f6f7fb;padding:.25rem .5rem;border-radius:6px}}
+.card{{background:#fff;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.08);padding:16px;margin-bottom:16px}}
+button{{padding:.45rem .8rem;border-radius:8px;border:1px solid #e5e7eb;background:#111827;color:#fff;cursor:pointer}}
+a{{color:#2563eb}}
+</style>
+<h1>Admin</h1>
+<div class="card">
+  <div><b>CSV URL</b>: <code>{CSV_URL or '(not set)'}</code></div>
+  <div>Counts → EN: <b>{en}</b> · ES: <b>{es}</b> · JA: <b>{ja}</b></div>
+  <div>Last load: <code>{last}</code> (TTL: {CACHE_TTL}s)</div>
+</div>
+<div class="card">
+  <form method="post" action="/admin/flush{hint}">
+    <button>Flush CSV Cache</button>
+  </form>
+</div>
+<p><a href="/debug/csv">debug/csv</a> · <a href="/">home</a></p>
+"""
+    return html
+
+@app.post("/admin/flush")
+def admin_flush():
+    if not _admin_allowed():
+        return ("forbidden", 403)
+    _csv_cache.update({"loaded_at": 0.0, "en": [], "es": [], "ja": _csv_cache.get("ja", [])})
+    return 'Cache flushed. <a href="/admin">Back</a>'
+
+
+
+@app.get("/routes")
+def routes():
+    return "<pre>" + "\n".join(sorted(str(r) for r in app.url_map.iter_rules())) + "</pre>"
+
+
+
 # --- Floating widget JS (💬 bubble) ---
 @app.get("/widget.js")
 def widget_js():
@@ -243,45 +314,98 @@ def widget_js():
     """.strip()
     return Response(js, mimetype="application/javascript")
 
+
+
+# --- Fuzzy matching helper ---
+import difflib
+
+def top_match(user_q: str, pairs, cutoff=0.55):
+    """
+    Return the (question, answer) pair whose question best matches user_q.
+    pairs: list of (q, a)
+    cutoff: 0..1 (higher = stricter)
+    """
+    if not user_q or not pairs:
+        return None
+    questions = [q for q, _ in pairs]
+    best = difflib.get_close_matches(user_q, questions, n=1, cutoff=cutoff)
+    if not best:
+        return None
+    qbest = best[0]
+    for q, a in pairs:
+        if q == qbest:
+            return (q, a)
+    return None
+
+
+
 # --- Chat API using OpenAI ---
 @app.post("/api/chat")
 def chat():
-    data = request.get_json(force=True) or {}
-    user_msg = (data.get("message") or "").strip()
-    if not user_msg:
-        return jsonify({"error": "No message"}), 400
-    if not OPENAI_API_KEY:
-        return jsonify({"error": "Missing OPENAI_API_KEY"}), 500
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
-
-    ctx = _get_bilingual_context()
-    blocks = []
-    if ctx["en"]: blocks.append(_format_context_for_model(ctx["en"], "[EN]"))
-    if ctx["es"]: blocks.append(_format_context_for_model(ctx["es"], "[ES]"))
-    context_text = "\n\n".join(blocks)
-
-    system_prompt = (
-        "You are a helpful school assistant. Detect if the user is writing in English or Spanish "
-        "and reply in that language. Prefer using matching-language entries from the provided context. "
-        "If no direct match exists, translate the best available answer. Keep responses concise."
-    )
-
-    user_prompt = f"Context:\n{context_text}\n\nUser: {user_msg}" if context_text else f"User: {user_msg}"
-
     try:
+        data = request.get_json(silent=True) or {}
+        user_msg = (data.get("message") or "").strip()
+        forced_lang = (data.get("lang") or "").lower()
+
+        if not user_msg:
+            return jsonify({"error": "Empty message"}), 400
+
+        # Load context (EN/ES/JA if present)
+        ctx = _get_bilingual_context()
+        blocks = []
+        if ctx.get("en"):
+            blocks.append(_format_context_for_model(ctx["en"], "[EN]"))
+        if ctx.get("es"):
+            blocks.append(_format_context_for_model(ctx["es"], "[ES]"))
+        if ctx.get("ja"):
+            blocks.append(_format_context_for_model(ctx["ja"], "[JA]"))
+        context_text = "\n\n".join(blocks) if blocks else ""
+
+        # Fuzzy hint across all languages
+        all_pairs = []
+        if ctx.get("ja"): all_pairs.extend(ctx["ja"])
+        if ctx.get("es"): all_pairs.extend(ctx["es"])
+        if ctx.get("en"): all_pairs.extend(ctx["en"])
+        best = top_match(user_msg, all_pairs, cutoff=0.55)
+        best_hint = ""
+        if best:
+            qh, ah = best
+            best_hint = f"\n\nLikely match:\nQ: {qh}\nA: {ah}"
+
+        # System prompt
+        system_prompt = (
+            "You are a helpful school assistant. Detect if the user writes in English, Spanish, or Japanese "
+            "and reply in that language. Prefer matching-language entries from the provided context. "
+            "If no direct match exists, translate the best available answer. Keep responses concise."
+        )
+        if forced_lang in ("en","es","ja"):
+            system_prompt += f" The user requested replies in {forced_lang.upper()} regardless of input."
+
+        # User prompt
+        if context_text:
+            user_prompt = f"Context:\n{context_text}\n{best_hint}\n\nUser: {user_msg}"
+        else:
+            user_prompt = f"{best_hint}\n\nUser: {user_msg}"
+
+        # Call OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0.2,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user",   "content": user_prompt},
             ],
+            temperature=0.2,
         )
-        reply = resp.choices[0].message.content
+        reply = resp.choices[0].message.content.strip()
         return jsonify({"reply": reply})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+    except Exception:
+        app.logger.exception("Chat error")
+        return jsonify({"error":"Server error processing your request."}), 500
+
+
+
 
 # --- serve /static if you have a frontend ---
 @app.get("/static/<path:path>")
@@ -292,3 +416,63 @@ def static_files(path):
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app.run(host="127.0.0.1", port=port, debug=True)
+# --- Simple admin (optional token) ---
+from datetime import datetime
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+
+def _admin_allowed() -> bool:
+    if not ADMIN_TOKEN:
+        return True
+    token = (request.args.get("token") or "").strip()
+    return token == ADMIN_TOKEN
+
+def _fmt_ts(ts: float) -> str:
+    if not ts: return "never"
+    try:
+        return datetime.utcfromtimestamp(ts).isoformat() + "Z"
+    except Exception:
+        return str(ts)
+
+@app.get("/admin")
+def admin():
+    if not _admin_allowed():
+        return ("forbidden", 403)
+    ctx = _get_bilingual_context()
+    en = len(ctx.get("en", []))
+    es = len(ctx.get("es", []))
+    ja = len(ctx.get("ja", []))
+    last = _fmt_ts(_csv_cache.get("loaded_at", 0.0))
+    hint = f"&token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
+    html = f"""
+<!doctype html>
+<meta charset="utf-8">
+<title>Admin</title>
+<style>
+body{{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:820px;margin:40px auto;padding:0 16px}}
+pre,code{{background:#f6f7fb;padding:.25rem .5rem;border-radius:6px}}
+.card{{background:#fff;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.08);padding:16px;margin-bottom:16px}}
+button{{padding:.45rem .8rem;border-radius:8px;border:1px solid #e5e7eb;background:#111827;color:#fff;cursor:pointer}}
+a{{color:#2563eb}}
+</style>
+<h1>Admin</h1>
+<div class="card">
+  <div><b>CSV URL</b>: <code>{CSV_URL or '(not set)'}</code></div>
+  <div>Counts → EN: <b>{en}</b> · ES: <b>{es}</b> · JA: <b>{ja}</b></div>
+  <div>Last load: <code>{last}</code> (TTL: {CACHE_TTL}s)</div>
+</div>
+<div class="card">
+  <form method="post" action="/admin/flush{hint}">
+    <button>Flush CSV Cache</button>
+  </form>
+</div>
+<p><a href="/debug/csv">debug/csv</a> · <a href="/">home</a></p>
+"""
+    return html
+
+@app.post("/admin/flush")
+def admin_flush():
+    if not _admin_allowed():
+        return ("forbidden", 403)
+    _csv_cache.update({"loaded_at": 0.0, "en": [], "es": [], "ja": _csv_cache.get("ja", [])})
+    return 'Cache flushed. <a href="/admin">Back</a>'
