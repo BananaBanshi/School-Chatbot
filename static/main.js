@@ -25,8 +25,8 @@ async function fetchCsvStatus(){
     const r=await fetch("/debug/csv",{cache:"no-store"});
     if(!r.ok) throw new Error("status "+r.status);
     const j=await r.json();
-    const en=j.en_count??0, es=j.es_count??0;
-    elBadge.textContent=`Connected: EN ${en} · ES ${es}`;
+    const en=j.en_count??0, es=j.es_count??0, ja=j.ja_count??0;
+    elBadge.textContent=`Connected: EN ${en} · ES ${es}  · JA ${ja}`;
     elBadge.className="badge ok";
   }catch(e){
     elBadge.textContent="No CSV connected";

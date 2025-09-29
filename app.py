@@ -53,63 +53,64 @@ def _fetch_csv_text(url: str) -> str:
             return f.read()
     raise ValueError(f"Unsupported CSV_URL scheme: {parsed.scheme}")
 
-def _load_bilingual_csv(url: str) -> None:
+
+
+def _norm(s: str) -> str:
+    return (s or "").replace("\ufeff","").strip().lower().replace(" ", "_")
+
+def _load_bilingual_csv(csv_url: str | None = None):
     """
-    Tolerant header mapping. Accepts:
-      question_en, answer_en, question_es, answer_es
-    Fallback: if only 'question' & 'answer' exist, treat as English.
-    Ignores extra columns (e.g., source_url).
+    Load CSV from the given URL (or from CSV_URL if not provided),
+    parse EN/ES/JA pairs, and populate _csv_cache.
     """
-    try:
-        # bust simple caches on remote CSV
-        bust = f"{url}{'&_ts=' if '?' in url else '?_ts='}{int(time.time())}"
-        text = _fetch_csv_text(bust)
-        rows = list(csv.reader(io.StringIO(text)))
-        if not rows:
-            raise ValueError("Empty CSV")
+    url = (csv_url or CSV_URL or "").strip()
+    en_rows, es_rows, ja_rows = [], [], []
 
-        header = [h.strip().lower() for h in rows[0]]
-        idx = {h: i for i, h in enumerate(header)}
-
-        def pick(*names):
-            for n in names:
-                if n in idx:
-                    return idx[n]
-            return None
-
-        qi_en = pick("question_en", "question en", "question", "q_en", "q")
-        ai_en = pick("answer_en",   "answer en",   "answer",   "a_en", "a")
-        qi_es = pick("question_es", "question es", "pregunta_es", "pregunta es", "pregunta")
-        ai_es = pick("answer_es",   "answer es",   "respuesta_es","respuesta es","respuesta")
-
-        en_rows, es_rows = [], []
-        for r in rows[1:]:
-            if len(r) < len(header):
-                r = r + [""] * (len(header) - len(r))
-            q_en = r[qi_en] if qi_en is not None else ""
-            a_en = r[ai_en] if ai_en is not None else ""
-            q_es = r[qi_es] if qi_es is not None else ""
-            a_es = r[ai_es] if ai_es is not None else ""
-
-            if q_en.strip() and a_en.strip():
-                en_rows.append((q_en.strip(), a_en.strip()))
-            if q_es.strip() and a_es.strip():
-                es_rows.append((q_es.strip(), a_es.strip()))
-
+    if not url:
         _csv_cache["en"] = en_rows
         _csv_cache["es"] = es_rows
-        _csv_cache["loaded_at"] = _now()
-        print(f"[CSV] Loaded {len(en_rows)} EN rows, {len(es_rows)} ES rows.")
+        _csv_cache["ja"] = ja_rows
+        _csv_cache["loaded_at"] = time.time()
+        return en_rows, es_rows, ja_rows
 
-    except Exception as e:
-        print("CSV load error:", e)
+    resp = requests.get(url, timeout=15)
+    resp.raise_for_status()
+
+    # force UTF-8 to avoid mojibake
+    text = resp.content.decode("utf-8", errors="replace")
+    buf = io.StringIO(text, newline="")
+
+    reader = csv.DictReader(buf)
+    for r in reader:
+        # normalize keys per row
+        row = {_norm(k): (v or "").strip() for k, v in r.items() if k is not None}
+
+        q_en = row.get("question_en") or row.get("question")
+        a_en = row.get("answer_en")   or row.get("answer")
+        q_es = row.get("question_es") or row.get("pregunta") or row.get("pregunta_es")
+        a_es = row.get("answer_es")   or row.get("respuesta") or row.get("respuesta_es")
+        q_ja = row.get("question_ja")
+        a_ja = row.get("answer_ja")
+
+        if q_en and a_en: en_rows.append((q_en, a_en))
+        if q_es and a_es: es_rows.append((q_es, a_es))
+        if q_ja and a_ja: ja_rows.append((q_ja, a_ja))
+
+    _csv_cache["en"] = en_rows
+    _csv_cache["es"] = es_rows
+    _csv_cache["ja"] = ja_rows
+    _csv_cache["loaded_at"] = time.time()
+    return en_rows, es_rows, ja_rows
+
 
 def _get_bilingual_context():
-    if not CSV_URL:
-        return {"en": [], "es": []}
-    if _csv_cache_expired() or _csv_cache["loaded_at"] == 0.0:
-        _load_bilingual_csv(CSV_URL)
-    return {"en": _csv_cache["en"], "es": _csv_cache["es"]}
+    now = time.time()
+    if now - _csv_cache.get("loaded_at", 0.0) > CACHE_TTL:
+        _load_bilingual_csv()   # <-- no argument
+    return {"en": _csv_cache.get("en", []),
+            "es": _csv_cache.get("es", []),
+            "ja": _csv_cache.get("ja", [])}
+
 
 def _format_context_for_model(pairs, lang_tag: str) -> str:
     blocks = []
@@ -187,9 +188,9 @@ def debug_csv():
         "en_count": len(ctx.get("en", [])),
         "es_count": len(ctx.get("es", [])),
         "ja_count": len(ctx.get("ja", [])),
-        "sample_en": ctx.get("en", [])[:2],
-        "sample_es": ctx.get("es", [])[:2],
-        "sample_ja": ctx.get("ja", [])[:2], 
+        "sample_en": ctx.get("en", [])[:3],
+        "sample_es": ctx.get("es", [])[:3],
+        "sample_ja": ctx.get("ja", [])[:3],
     })
 
 
