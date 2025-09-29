@@ -210,48 +210,6 @@ def _fmt_ts(ts: float) -> str:
     except Exception:
         return str(ts)
 
-@app.get("/admin")
-def admin():
-    if not _admin_allowed():
-        return ("forbidden", 403)
-    ctx = _get_bilingual_context()
-    en = len(ctx.get("en", []))
-    es = len(ctx.get("es", []))
-    ja = len(ctx.get("ja", []))
-    last = _fmt_ts(_csv_cache.get("loaded_at", 0.0))
-    hint = f"&token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
-    html = f"""
-<!doctype html>
-<meta charset="utf-8">
-<title>Admin</title>
-<style>
-body{{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:820px;margin:40px auto;padding:0 16px}}
-pre,code{{background:#f6f7fb;padding:.25rem .5rem;border-radius:6px}}
-.card{{background:#fff;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.08);padding:16px;margin-bottom:16px}}
-button{{padding:.45rem .8rem;border-radius:8px;border:1px solid #e5e7eb;background:#111827;color:#fff;cursor:pointer}}
-a{{color:#2563eb}}
-</style>
-<h1>Admin</h1>
-<div class="card">
-  <div><b>CSV URL</b>: <code>{CSV_URL or '(not set)'}</code></div>
-  <div>Counts → EN: <b>{en}</b> · ES: <b>{es}</b> · JA: <b>{ja}</b></div>
-  <div>Last load: <code>{last}</code> (TTL: {CACHE_TTL}s)</div>
-</div>
-<div class="card">
-  <form method="post" action="/admin/flush{hint}">
-    <button>Flush CSV Cache</button>
-  </form>
-</div>
-<p><a href="/debug/csv">debug/csv</a> · <a href="/">home</a></p>
-"""
-    return html
-
-@app.post("/admin/flush")
-def admin_flush():
-    if not _admin_allowed():
-        return ("forbidden", 403)
-    _csv_cache.update({"loaded_at": 0.0, "en": [], "es": [], "ja": _csv_cache.get("ja", [])})
-    return 'Cache flushed. <a href="/admin">Back</a>'
 
 
 
@@ -407,15 +365,6 @@ def chat():
 
 
 
-# --- serve /static if you have a frontend ---
-@app.get("/static/<path:path>")
-def static_files(path):
-    return send_from_directory(app.static_folder, path)
-
-# --- Run locally ---
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
-    app.run(host="127.0.0.1", port=port, debug=True)
 # --- Simple admin (optional token) ---
 from datetime import datetime
 
@@ -433,6 +382,7 @@ def _fmt_ts(ts: float) -> str:
         return datetime.utcfromtimestamp(ts).isoformat() + "Z"
     except Exception:
         return str(ts)
+
 
 @app.get("/admin")
 def admin():
@@ -476,3 +426,21 @@ def admin_flush():
         return ("forbidden", 403)
     _csv_cache.update({"loaded_at": 0.0, "en": [], "es": [], "ja": _csv_cache.get("ja", [])})
     return 'Cache flushed. <a href="/admin">Back</a>'
+
+
+
+
+
+
+# --- serve /static if you have a frontend ---
+@app.get("/static/<path:path>")
+def static_files(path):
+    return send_from_directory(app.static_folder, path)
+
+# --- Run locally ---
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="127.0.0.1", port=port, debug=True)
+
+
+
