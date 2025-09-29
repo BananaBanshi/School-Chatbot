@@ -396,7 +396,7 @@ def admin():
     es = len(ctx.get("es", []))
     ja = len(ctx.get("ja", []))
     last = _fmt_ts(_csv_cache.get("loaded_at", 0.0))
-    hint = f"&token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
+    hint = f"?token={ADMIN_TOKEN}" if ADMIN_TOKEN else ""
     html = f"""
 <!doctype html>
 <meta charset="utf-8">
@@ -423,15 +423,12 @@ a{{color:#2563eb}}
 """
     return html
 
-@app.post("/admin/flush")
+@app.route("/admin/flush", methods=["POST", "GET"])
 def admin_flush():
     if not _admin_allowed():
         return ("forbidden", 403)
     _csv_cache.update({"loaded_at": 0.0, "en": [], "es": [], "ja": _csv_cache.get("ja", [])})
     return 'Cache flushed. <a href="/admin">Back</a>'
-
-
-
 
 
 
